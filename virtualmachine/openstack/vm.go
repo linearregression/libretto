@@ -226,10 +226,20 @@ func (vm *VM) Provision() error {
 	}
 
 	server, err := servers.Create(client, createOpts).Extract()
-
 	if err != nil {
 		return err
 	}
+
+	// Cleanup VM if something goes wrong
+	defer func() {
+		if err == nil {
+			return
+		}
+
+		if errDestroy := vm.Destroy(); errDestroy != nil {
+			err = fmt.Errorf("%s %s", err, errDestroy)
+		}
+	}()
 
 	// Set the server ID to VM ID
 	vm.InstanceID = server.ID
@@ -255,6 +265,8 @@ func (vm *VM) Provision() error {
 
 	err = floatingip.Associate(client, server.ID, fip.IP).ExtractErr()
 	if err != nil {
+		errFipDelete := floatingip.Delete(client, fip.ID).ExtractErr()
+		err = fmt.Errorf("%s %s", err, errFipDelete)
 		return fmt.Errorf("unable to associate a floating ip: %s", err)
 	}
 	vm.FloatingIP = fip
@@ -343,7 +355,7 @@ func (vm *VM) Destroy() error {
 	}
 
 	// De-attach and delete the volume, if there is an attached one
-	if vm.Volume.Size > 0 {
+	if vm.Volume.ID != "" {
 		err := deattachAndDeleteVolume(vm)
 		if err != nil {
 			return err

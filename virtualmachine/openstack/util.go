@@ -425,6 +425,17 @@ func createAndAttachVolume(vm *VM) error {
 		return fmt.Errorf("failed to create a new volume for the VM: %s", err)
 	}
 
+	defer func() {
+		if err == nil {
+			return
+		}
+
+		errDeleteVolume := volumes.Delete(bsClient, vol.ID).ExtractErr()
+		if errDeleteVolume != nil {
+			err = fmt.Errorf("%s %s", err, errDeleteVolume)
+		}
+	}()
+
 	// Wait until Volume becomes available
 	err = waitUntilVolume(bsClient, vol.ID, volumeStateAvailable)
 	if err != nil {
@@ -441,6 +452,8 @@ func createAndAttachVolume(vm *VM) error {
 	// Wait until Volume is attached to the VM
 	err = waitUntilVolume(bsClient, vol.ID, volumeStateInUse)
 	if err != nil {
+		errVaDelete := volumeattach.Delete(cClient, vm.InstanceID, vol.ID).ExtractErr()
+		err = fmt.Errorf("%s %s", err, errVaDelete)
 		return fmt.Errorf("failed to attach the volume to the VM: %s", err)
 	}
 
